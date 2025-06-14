@@ -85,6 +85,16 @@ jobs:
           echo "Listing app/build/outputs/apk/release:"
           ls -R app/build/outputs/apk/release || echo "Release directory not found or empty."
 
+      - name: Verify APK presence
+        run: |
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
+          if [ -f "$APK_PATH" ]; then
+            echo "SUCCESS: APK found at $APK_PATH"
+          else
+            echo "ERROR: APK not found at $APK_PATH"
+            exit 1
+          fi
+
       - name: Echo Proposed Tag Name
         run: echo "Proposed tag name for release: ${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ github.run_number }}"
 
