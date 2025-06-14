@@ -20,6 +20,16 @@ android {
         versionName tagName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "TAG_NAME", "\"${tagName}\"")
+        // Define MAPS_API_KEY as a buildConfigField
+        // It attempts to read an environment variable named MAPS_API_KEY_FROM_WORKFLOW.
+        // If the environment variable is not set (e.g., during local builds),
+        // it falls back to "YOUR_DEBUG_KEY_PLACEHOLDER".
+        def pobrezaApiKey = System.getenv("MAPS_API_KEY_FROM_WORKFLOW") ?: "YOUR_DEBUG_KEY_PLACEHOLDER"
+        buildConfigField("String", "MAPS_API_KEY", "\"${pobrezaApiKey}\"")
+
+        // New resValue for the manifest
+        def mapsApiKeyForRes = System.getenv("MAPS_API_KEY_FROM_WORKFLOW") ?: "YOUR_DEBUG_KEY_PLACEHOLDER_RES"
+        resValue("string", "google_maps_key_for_manifest", mapsApiKeyForRes)
     }
 
 
@@ -100,7 +110,7 @@ dependencies {
     implementation 'androidx.palette:palette:1.0.0'
 
 
-    implementation 'io.github.controlwear:virtualjoystick:1.10.1'
+    implementation 'com.github.lukkass222:virtual-joystick-android:1.13.5'
 
 
 
