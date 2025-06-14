@@ -1,4 +1,4 @@
-name: Build and Release APK
+name: Build and Release APK tag
 
 on:
   workflow_dispatch:
@@ -9,10 +9,10 @@ on:
         default: 'main'
   push:
     branches:
-      - main # Specify the default branch for automatic builds
+      - '**' # Allow pushes to any branch
 
 permissions:
-  contents: write # Required to create a release and upload assets
+  contents: write # Allows to create a release and upload assets
 
 jobs:
   build_and_release:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || github.ref_name }} # Use input branch for workflow_dispatch, otherwise use push branch
+          ref: ${{ github.event_inputs.branch || github.ref_name }} # Use input branch for workflow_dispatch, else push branch
           fetch-depth: 0 # Fetch all history for accurate versioning
 
       - name: Cache Gradle dependencies
@@ -66,7 +66,7 @@ jobs:
       - name: Extract version code
         id: extract_version_code
         run: |
-          VERSION_CODE=$(grep 'versionCode ' app/build.gradle | sed -n 's/.*versionಸ0versionCode \([0-9]*\).*/\1/p' || echo "error")
+          VERSION_CODE=$(grep 'versionCode ' app/build.gradle | sed -n 's/.*versionCode \([0-9]*\).*/\1/p' || echo "error")
           if [ "$VERSION_CODE" = "error" ]; then
             echo "Failed to extract version code"
             exit 1
