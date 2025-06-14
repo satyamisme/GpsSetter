@@ -64,6 +64,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
 import java.util.regex.Matcher
@@ -128,20 +129,23 @@ class MapActivity :  MonetCompatActivity(), OnMapReadyCallback, GoogleMap.OnMapC
 
         exportFavoritesLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) {
-                result.data?.data?.let { uri ->
-                    try {
+                result.data?.data?.let { uri -> // uri is non-null here
+                    try { // Single try block for all operations for this URI
                         val favList = viewModel.allFavList.value
-                        try {
+                        if (favList.isEmpty()) {
+                            showToast(getString(R.string.no_favorites_to_export))
+                        } else {
                             val jsonString = favoritesToJson(favList)
                             contentResolver.openOutputStream(uri)?.use { outputStream ->
                                 outputStream.write(jsonString.toByteArray())
                                 showToast(getString(R.string.export_successful))
-                            } ?: throw IOException("Failed to open output stream for URI: $uri")
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            showToast(getString(R.string.export_failed) + ": ${e.message}")
+                            } ?: throw IOException(getString(R.string.export_failed_no_uri) + " (OutputStream was null for $uri)")
                         }
-                    } ?: showToast(getString(R.string.export_failed_no_uri))
+                    } catch (e: Exception) { // Catch all exceptions for this URI processing
+                        e.printStackTrace()
+                        showToast(getString(R.string.export_failed) + ": ${e.message}")
+                    }
+                } ?: showToast(getString(R.string.export_failed_no_uri)) // This handles the case where result.data.data itself is null
             }
         }
 
@@ -587,6 +591,7 @@ class MapActivity :  MonetCompatActivity(), OnMapReadyCallback, GoogleMap.OnMapC
                 }
             }
         }
+    } // This closing brace for getAllUpdatedFavList was missing or misplaced.
 
     private fun exportFavorites() {
         // Check if there are any favorites to export
@@ -638,7 +643,7 @@ class MapActivity :  MonetCompatActivity(), OnMapReadyCallback, GoogleMap.OnMapC
             val jsonArray = JSONArray()
             favorites.forEach { favData ->
                 val jsonObject = JSONObject()
-                jsonObject.put("name", favData.name)
+                jsonObject.put("address", favData.address ?: "") // Use "address" as key, matching Favourite field
                 // Ensure lat and lng are not null; use a sensible default or skip if necessary
                 jsonObject.put("latitude", favData.lat ?: 0.0)
                 jsonObject.put("longitude", favData.lng ?: 0.0)
@@ -653,12 +658,13 @@ class MapActivity :  MonetCompatActivity(), OnMapReadyCallback, GoogleMap.OnMapC
             val jsonArray = JSONArray(jsonString)
             for (i in 0 until jsonArray.length()) {
                 val jsonObject = jsonArray.getJSONObject(i)
-                val name = jsonObject.optString("name")
+                val name = jsonObject.optString("address") // Read "address" key
                 // Use optDouble with fallback to NaN to check if value exists and is valid
                 val latitude = jsonObject.optDouble("latitude", Double.NaN)
                 val longitude = jsonObject.optDouble("longitude", Double.NaN)
 
                 if (name.isNotEmpty() && !latitude.isNaN() && !longitude.isNaN()) {
+                    // 'name' here now holds the value from the "address" field in JSON
                     favoritesList.add(ImportableFavData(name, latitude, longitude))
                 }
             }
@@ -666,34 +672,8 @@ class MapActivity :  MonetCompatActivity(), OnMapReadyCallback, GoogleMap.OnMapC
         }
     }
 
-    private fun startRandomPositioningLogic() {
-            val u = random.nextDouble()
-            val v = random.nextDouble()
-            val w = radiusInDegrees * StrictMath.sqrt(u)
-            val t = 2 * Math.PI * v
-            // Compute offsets
-            val x = w * StrictMath.cos(t)
-            val y = w * StrictMath.sin(t) / StrictMath.cos(Math.toRadians(center.latitude)) // Adjust for longitude scaling
-
-            val newLat = center.latitude + x
-            val newLng = center.longitude + y
-            return LatLng(newLat, newLng)
-        }
-    }
-
-    private fun startRandomPositioningLogic() {
-        val u = random.nextDouble()
-        val v = random.nextDouble()
-        val w = radiusInDegrees * StrictMath.sqrt(u)
-        val t = 2 * Math.PI * v
-        // Compute offsets
-        val x = w * StrictMath.cos(t)
-        val y = w * StrictMath.sin(t) / StrictMath.cos(Math.toRadians(center.latitude)) // Adjust for longitude scaling
-
-        val newLat = center.latitude + x
-        val newLng = center.longitude + y
-        return LatLng(newLat, newLng)
-    }
+    // Removed the duplicated startRandomPositioningLogic definitions here.
+    // The correct one is below this companion object.
 
     private fun startRandomPositioningLogic() {
         randomPositioningJob?.cancel() // Cancel any existing job
@@ -774,7 +754,7 @@ class MapActivity :  MonetCompatActivity(), OnMapReadyCallback, GoogleMap.OnMapC
         // showToast(getString(R.string.location_unset))
     }
 
-    }
+    // Stray brace removed from here, it was after stopRandomPositioningLogic's correct closing brace.
 
 
     private fun updateDialog(){
