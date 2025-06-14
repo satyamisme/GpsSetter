@@ -1,41 +1,85 @@
-name: Build and Release APK tag
+name: Build and Release APK
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build from'
+        required: true
+        default: 'main'
+  push:
+    branches:
+      - main # Specify the default branch for automatic builds
 
 permissions:
-  contents: write
+  contents: write # Required to create a release and upload assets
 
 jobs:
   build_and_release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch || github.ref_name }} # Use input branch for workflow_dispatch, otherwise use push branch
+          fetch-depth: 0 # Fetch all history for accurate versioning
+
+      - name: Cache Gradle dependencies
+        id: cache-gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v2
+        uses: android-actions/setup-android@v3
 
       - name: Grant execute permission to gradlew
         run: chmod +x ./gradlew
 
       - name: Create empty local.properties
-        run: touch local.properties
+        run: touch local.properties # Creates an empty file in the project root
 
       - name: Extract version name
         id: extract_version_name
-        run: echo "VERSION_NAME=$(./gradlew -q :app:printVersionName)" >> $GITHUB_OUTPUT
+        run: |
+          VERSION_NAME=$(./gradlew -q :app:printVersionName || echo "error")
+          if [ "$VERSION_NAME" = "error" ]; then
+            echo "Failed to extract version name"
+            exit 1
+          fi
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_OUTPUT
+        env:
+          MAPS_API_KEY_FROM_WORKFLOW: ${{ secrets.MAPS_API_KEY_PLACEHOLDER }}
 
       - name: Extract version code
         id: extract_version_code
-        run: echo "VERSION_CODE=$(grep 'versionCode ' app/build.gradle | sed -n 's/.*versionCode \([0-9]*\).*/\1/p')" >> $GITHUB_OUTPUT
+        run: |
+          VERSION_CODE=$(grep 'versionCode ' app/build.gradle | sed -n 's/.*versionಸ0versionCode \([0-9]*\).*/\1/p' || echo "error")
+          if [ "$VERSION_CODE" = "error" ]; then
+            echo "Failed to extract version code"
+            exit 1
+          fi
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
+
+      - name: Get app name and last commit
+        id: app_info
+        run: |
+          APP_NAME=$(grep 'applicationId ' app/build.gradle | sed -n 's/.*applicationId "\(.*\)".*/\1/p' | head -n 1)
+          COMMIT_HASH=$(git rev-parse --short HEAD)
+          echo "APP_NAME=$APP_NAME" >> $GITHUB_OUTPUT
+          echo "COMMIT_HASH=$COMMIT_HASH" >> $GITHUB_OUTPUT
 
       - name: Check if MAPS_API_KEY_PLACEHOLDER is set
         run: |
@@ -43,35 +87,31 @@ jobs:
             echo "MAPS_API_KEY_PLACEHOLDER secret is set by GitHub."
           else
             echo "MAPS_API_KEY_PLACEHOLDER secret is NOT set by GitHub. Please ensure it is correctly named in repository settings."
+            exit 1
           fi
 
-      - name: Decode Keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/release.keystore
-
-      - name: Check Decoded Keystore File
+      - name: Clear cache on build failure
+        if: failure()
         run: |
-          echo "Checking for decoded keystore at ${{ github.workspace }}/release.keystore"
-          ls -l ${{ github.workspace }}/release.keystore
-          if [ -f "${{ github.workspace }}/release.keystore" ] && [ -s "${{ github.workspace }}/release.keystore" ]; then
-            echo "Keystore file exists at ${{ github.workspace }}/release.keystore and is not empty."
-          else
-            echo "ERROR: Keystore file does not exist at ${{ github.workspace }}/release.keystore or is empty!"
-          fi
+          echo "Build failed, clearing Gradle cache to ensure clean state for next run."
+          rm -rf ~/.gradle/caches
 
-      - name: Build release APK
-        run: ./gradlew :app:assembleRelease
+      - name: Sign APK
+        run: |
+          echo "${{ secrets.SIGNING_KEYSTORE }}" | base64 -d > keystore.jks
+          ./gradlew :app:assembleRelease
         env:
-          MAPS_API_KEY_FROM_WORKFLOW: ${{ secrets.MAPS_API_KEY_PLACEHOLDER }}
-          KEYSTORE_PATH: ${{ github.workspace }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          MAPS_API_KEY_FROM_WORKFLOW: ${{ secrets.MAPS_API_KEY_PLACEHOLDER }}
 
-      - name: Display generated resources on failure
-        if: failure()
+      - name: Verify APK exists
         run: |
-          echo "Attempting to display generated string resources..."
-          cat app/build/generated/res/resValues/release/values/generated.xml || echo "Generated XML for resValue not found at app/build/generated/res/resValues/release/values/generated.xml"
+          if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
+            echo "Signed APK not found at app/build/outputs/apk/release/app-release.apk"
+            exit 1
+          fi
 
       - name: List APK directory contents
         run: |
@@ -80,30 +120,24 @@ jobs:
           echo "Listing app/build/outputs/apk/release:"
           ls -R app/build/outputs/apk/release || echo "Release directory not found or empty."
 
-      - name: Create and Push Git Tag
-        run: |
-          TAG_NAME="${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ github.run_number }}"
-          git tag $TAG_NAME
-          git push origin $TAG_NAME
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Create GitHub Release
         id: create_gh_release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ github.run_number }}
-          release_name: Release ${{ steps.extract_version_name.outputs.VERSION_NAME }} (Run #${{ github.run_number }})
+          tag_name: v${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ steps.app_info.outputs.COMMIT_HASH }}
+          name: ${{ steps.app_info.outputs.APP_NAME }} Release v${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ steps.app_info.outputs.COMMIT_HASH }}
           body: |
-            ## Release ${{ steps.extract_version_name.outputs.VERSION_NAME }} (Run #${{ github.run_number }})
+            ## ${{ steps.app_info.outputs.APP_NAME }} Release v${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ steps.app_info.outputs.COMMIT_HASH }}
             **Build Number:** ${{ steps.extract_version_code.outputs.VERSION_CODE }}
+            **Commit:** ${{ steps.app_info.outputs.COMMIT_HASH }}
+            **Branch:** ${{ github.event.inputs.branch || github.ref_name }}
 
             **Changelog:**
-            * (Details of changes in this version - please fill in manually or automate)
+            * Add your changelog here
           draft: false
-          prerelease: true
+          prerelease: false
 
       - name: Upload Release APK Asset
         uses: actions/upload-release-asset@v1
@@ -112,5 +146,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_gh_release.outputs.upload_url }}
           asset_path: app/build/outputs/apk/release/app-release.apk
-          asset_name: app-release-${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ github.run_number }}.apk
+          asset_name: ${{ steps.app_info.outputs.APP_NAME }}-v${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ steps.app_info.outputs.COMMIT_HASH }}.apk
           asset_content_type: application/vnd.android.package-archive
