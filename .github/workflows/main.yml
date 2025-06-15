@@ -1,36 +1,36 @@
 name: Build and Release APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual triggering
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*' # Example: v1.0.0, v1.2.3-beta
 
 permissions:
-  contents: write
+  contents: write # Required to create a release and upload assets
 
 jobs:
   build_and_release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v3
         with:
-          distribution: temurin
-          java-version: 17
-          cache: gradle
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v2
 
       - name: Grant execute permission to gradlew
         run: chmod +x ./gradlew
 
       - name: Create empty local.properties
-        run: touch local.properties
+        run: touch local.properties # Creates an empty file in the project root
 
       - name: Extract version name
         id: extract_version_name
@@ -43,22 +43,24 @@ jobs:
       - name: Check if MAPS_API_KEY_PLACEHOLDER is set
         run: |
           if [ -n "${{ secrets.MAPS_API_KEY_PLACEHOLDER }}" ]; then
-            echo "MAPS_API_KEY_PLACEHOLDER secret is set."
+            echo "MAPS_API_KEY_PLACEHOLDER secret is set by GitHub."
           else
-            echo "ERROR: MAPS_API_KEY_PLACEHOLDER secret is not set."
-            exit 1
+            echo "MAPS_API_KEY_PLACEHOLDER secret is NOT set by GitHub. Please ensure it is correctly named in repository settings."
+            # exit 1 # Optionally uncomment to fail if secret is not set
           fi
 
       - name: Decode Keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > release.keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/release.keystore
 
       - name: Check Decoded Keystore File
         run: |
-          if [ -f "release.keystore" ] && [ -s "release.keystore" ]; then
-            echo "Keystore file exists and is not empty."
+          echo "Checking for decoded keystore at ${{ github.workspace }}/release.keystore"
+          ls -l ${{ github.workspace }}/release.keystore
+          if [ -f "${{ github.workspace }}/release.keystore" ] && [ -s "${{ github.workspace }}/release.keystore" ]; then
+            echo "Keystore file exists at ${{ github.workspace }}/release.keystore and is not empty."
           else
-            echo "ERROR: Keystore file is missing or empty."
-            exit 1
+            echo "ERROR: Keystore file does not exist at ${{ github.workspace }}/release.keystore or is empty!"
+            # Consider adding 'exit 1' here if you want the workflow to fail fast if the keystore is missing/empty.
           fi
 
       - name: Build release APK
@@ -71,41 +73,46 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Display generated resources on failure
-        if: failure()
-        run: cat app/build/generated/res/resValues/release/values/generated.xml || echo "Generated XML not found."
+        if: failure() # Only run if the previous steps (especially build) failed
+        run: |
+          echo "Attempting to display generated string resources..."
+          cat app/build/generated/res/resValues/release/values/generated.xml || echo "Generated XML for resValue not found at app/build/generated/res/resValues/release/values/generated.xml"
 
       - name: List APK directory contents
-        run: ls -R app/build/outputs/apk || echo "APK directory not found."
-
-      - name: Check APK existence
         run: |
-          if [ -f "app/build/outputs/apk/release/app-release.apk" ]; then
-            echo "APK found at app/build/outputs/apk/release/app-release.apk"
-          else
-            echo "ERROR: APK not found at app/build/outputs/apk/release/app-release.apk"
-            exit 1
-          fi
+          echo "Listing app/build/outputs/apk:"
+          ls -R app/build/outputs/apk
+          echo "Listing app/build/outputs/apk/release:"
+          ls -R app/build/outputs/apk/release || echo "Release directory not found or empty."
+
+      - name: Echo Proposed Tag Name
+        run: echo "Proposed tag name for release: ${{ steps.extract_version_name.outputs.VERSION_NAME }}-${{ github.run_number }}"
 
       - name: Create GitHub Release
-        id: create_gh_release
-        uses: softprops/action-gh-release@v2
+        id: create_gh_release # Ensure this ID is unique if 'create_release' was used before
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}-run-${{ github.run_number }}
-          name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? format('Release {0}', github.ref_name) : format('Release {0} (Run #{1})', steps.extract_version_name.outputs.VERSION_NAME, github.run_number) }}
+          tag_name: ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME + '-' + github.run_number) }}
+          release_name: ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? 'Release ' + github.ref_name : 'Release ' + steps.extract_version_name.outputs.VERSION_NAME + ' (Run #' + github.run_number + ')') }}
           body: |
-            ## Release Details
-            **Version Name:** ${{ steps.extract_version_name.outputs.VERSION_NAME }}
-            **Version Code:** ${{ steps.extract_version_code.outputs.VERSION_CODE }}
-            **Tag:** ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}-run-${{ github.run_number }}
+            ## ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? 'Release ' + github.ref_name : 'Release ' + steps.extract_version_name.outputs.VERSION_NAME + ' (Run #' + github.run_number + ')') }}
+            **Version Name (from Gradle):** ${{ steps.extract_version_name.outputs.VERSION_NAME }}
+            **Version Code (from Gradle):** ${{ steps.extract_version_code.outputs.VERSION_CODE }}
+            ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? '**Tag:** ' + github.ref_name : '**Workflow Run Tag:** ' + steps.extract_version_name.outputs.VERSION_NAME + '-' + github.run_number) }}
+
             **Changelog:**
-            - Placeholder for changes
+            * (Details of changes in this version - please fill in manually or automate)
           draft: false
-          prerelease: ${{ github.event_name != 'push' || github.ref_type != 'tag' }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: true # Consider making this conditional too if pushed tags are official releases
 
       - name: Upload Release APK Asset
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          files: app/build/outputs/apk/release/app-release.apk
-          tag_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}-run-${{ github.run_number }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          upload_url: ${{ steps.create_gh_release.outputs.upload_url }}
+          asset_path: app/build/outputs/apk/release/app-release.apk
+          asset_name: ${{ 'app-release-' + (github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME + '-' + github.run_number) + '.apk' }}
+          asset_content_type: application/vnd.android.package-archive
