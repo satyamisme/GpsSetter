@@ -94,13 +94,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}-${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : github.run_number }}
-          release_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? 'Release ' : 'Release ' }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : ' (Run #' }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : github.run_number }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : ')' }}
+          tag_name: ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME + '-' + github.run_number) }}
+          release_name: ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? 'Release ' + github.ref_name : 'Release ' + steps.extract_version_name.outputs.VERSION_NAME + ' (Run #' + github.run_number + ')') }}
           body: |
-            ## ${{ github.event_name == 'push' && github.ref_type == 'tag' ? 'Release ' : 'Release ' }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : ' (Run #' }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : github.run_number }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : ')' }}
+            ## ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? 'Release ' + github.ref_name : 'Release ' + steps.extract_version_name.outputs.VERSION_NAME + ' (Run #' + github.run_number + ')') }}
             **Version Name (from Gradle):** ${{ steps.extract_version_name.outputs.VERSION_NAME }}
             **Version Code (from Gradle):** ${{ steps.extract_version_code.outputs.VERSION_CODE }}
-            ${{ github.event_name == 'push' && github.ref_type == 'tag' ? '**Tag:** ' : '**Workflow Run Tag:** ' }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : '-' }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : github.run_number }}
+            ${{ (github.event_name == 'push' && github.ref_type == 'tag' ? '**Tag:** ' + github.ref_name : '**Workflow Run Tag:** ' + steps.extract_version_name.outputs.VERSION_NAME + '-' + github.run_number) }}
 
             **Changelog:**
             * (Details of changes in this version - please fill in manually or automate)
@@ -114,5 +114,5 @@ jobs:
         with:
           upload_url: ${{ steps.create_gh_release.outputs.upload_url }}
           asset_path: app/build/outputs/apk/release/app-release.apk
-          asset_name: app-release-${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : '-' }}${{ github.event_name == 'push' && github.ref_type == 'tag' ? '' : github.run_number }}.apk
+          asset_name: ${{ 'app-release-' + (github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME + '-' + github.run_number) + '.apk' }}
           asset_content_type: application/vnd.android.package-archive
