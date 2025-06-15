@@ -38,10 +38,19 @@ android {
 
     signingConfigs {
         release {
-            storeFile file(System.getenv('KEYSTORE_PATH')) // CI must provide this
-            storePassword System.getenv('KEYSTORE_PASSWORD')
-            keyAlias System.getenv('KEY_ALIAS')
-            keyPassword System.getenv('KEY_PASSWORD')
+            def ksPath = project.findProperty('keystorePath') // findProperty returns null if not found
+            if (ksPath != null && !ksPath.isEmpty()) {
+                storeFile file(ksPath)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias System.getenv('KEY_ALIAS')
+                keyPassword System.getenv('KEY_PASSWORD')
+            } else {
+                println "WARNING: Release keystore path not provided via -PkeystorePath Gradle property. APK will not be signed using 'release' signingConfig."
+                // To make the build fail if signing is mandatory for a release build type that uses this config:
+                // if (getName() == 'release') { // Or check based on build type context
+                //     throw new GradleException("Release keystore path not provided. Set -PkeystorePath property for the 'release' signingConfig.")
+                // }
+            }
         }
     }
 
