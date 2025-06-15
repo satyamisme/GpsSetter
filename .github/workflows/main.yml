@@ -90,13 +90,13 @@ jobs:
         id: create_gh_release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : format('{0}-{1}', steps.extract_version_name.outputs.VERSION_NAME, github.run_number) }}
+          tag_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}-run-${{ github.run_number }}
           name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? format('Release {0}', github.ref_name) : format('Release {0} (Run #{1})', steps.extract_version_name.outputs.VERSION_NAME, github.run_number) }}
           body: |
             ## Release Details
             **Version Name:** ${{ steps.extract_version_name.outputs.VERSION_NAME }}
             **Version Code:** ${{ steps.extract_version_code.outputs.VERSION_CODE }}
-            **Tag:** ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : format('{0}-{1}', steps.extract_version_name.outputs.VERSION_NAME, github.run_number) }}
+            **Tag:** ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}-run-${{ github.run_number }}
             **Changelog:**
             - Placeholder for changes
           draft: false
@@ -107,5 +107,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/release/app-release.apk
-          tag_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : format('{0}-{1}', steps.extract_version_name.outputs.VERSION_NAME, github.run_number) }}
+          tag_name: ${{ github.event_name == 'push' && github.ref_type == 'tag' ? github.ref_name : steps.extract_version_name.outputs.VERSION_NAME }}-run-${{ github.run_number }}
           token: ${{ secrets.GITHUB_TOKEN }}
